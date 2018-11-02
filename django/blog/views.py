@@ -32,6 +32,7 @@ def signin(request):
         username = req_data['username']
         password = req_data['password']
         user = authenticate(username=username, password=password)
+
         if user is not None:
             login(request, user)
             return HttpResponse(status=204)
@@ -52,9 +53,13 @@ def signout(request):
 
 def article(request):
     if request.method == 'GET':
-        article_list = [Article for Article in Article.objects.all().values()]
+        if not request.user.is_authenticated:
+            return HttpResponse(status=401)
+        article_list = [Article for Article in Article.objects.all().values('title', 'content', 'author')]
         return JsonResponse(article_list, safe=False)
     elif request.method == 'POST':
+        if not request.user.is_authenticated:
+            return HttpResponse(status=401)
         req_data = json.loads(request.body.decode())
         title = req_data['title']
         content = req_data['content']
@@ -67,17 +72,23 @@ def article(request):
 
 def article_detail(request, article_id):
     if request.method == 'GET':
+        if not request.user.is_authenticated:
+            return HttpResponse(status=401)
         try:
             article = Article.objects.get(id=article_id)
         except Article.DoesNotExist:
             return HttpResponse(status=404)
-        article = model_to_dict(article)
+        article = model_to_dict(article, fields={'title', 'content', 'author'})
         return JsonResponse(article, safe=False)
     elif request.method == 'PUT':
+        if not request.user.is_authenticated:
+            return HttpResponse(status=401)
         try:
             article = Article.objects.get(id=article_id)
         except Article.DoesNotExist:
             return HttpResponse(status=404)
+        if article.author.id != request.user.id:
+            return HttpResponse(status=403)
         req_data = json.loads(request.body.decode())
         title = req_data['title']
         content = req_data['content']
@@ -86,21 +97,75 @@ def article_detail(request, article_id):
         article.save()
         return HttpResponse(status=200)   
     elif request.method == 'DELETE':
+        if not request.user.is_authenticated:
+            return HttpResponse(status=401)
         try:
             article = Article.objects.get(id=article_id)
         except Article.DoesNotExist:
             return HttpResponse(status=404)
+        if article.author.id != request.user.id:
+            return HttpResponse(status=403)
         article.delete()
-        comments = Comment.objects.filter(article=article_id)
-        for comment in comments:
-            comment.delete()
         return HttpResponse(status=200)
     else:
         return HttpResponseNotAllowed(['GET', 'POST', 'DELETE'])        
         
 
-def comment(request):
-    pass
+def comment(request, article_id):
+    if request.method == 'GET':
+        if not request.user.is_authenticated:
+            return HttpResponse(status=401)
+        comment_list = [Comment for Comment in Comment.objects.filter(article=article_id).values('article', 'content', 'author')]
+        return JsonResponse(comment_list, safe=False)
+    elif request.method == 'POST':
+        if not request.user.is_authenticated:
+            return HttpResponse(status=401)
+        req_data = json.loads(request.body.decode())
+        content = req_data['content']
+        new_comment = Comment(article=Article.objects.get(id=article_id), content=content, author=request.user)
+        new_comment.save()
+        return HttpResponse(status=201)
+    else:
+        return HttpResponseNotAllowed(['GET', 'POST']) 
 
-def comment_detail(reqest):
-    pass
+def comment_detail(request, comment_id):
+    if request.method == 'GET':
+        if not request.user.is_authenticated:
+            return HttpResponse(status=401)
+        try:
+            comment = Comment.objects.get(id=comment_id)
+        except Comment.DoesNotExist:
+            return HttpResponse(status=404)
+        comment = model_to_dict(comment, fields={'article', 'content', 'author'})
+        return JsonResponse(comment, safe=False)
+    elif request.method == 'PUT':
+        if not request.user.is_authenticated:
+            return HttpResponse(status=401)
+        try:
+            comment = Comment.objects.get(id=comment_id)
+        except Comment.DoesNotExist:
+            return HttpResponse(status=404)
+        if comment.author.id != request.user.id:
+            return HttpResponse(status=403)
+        req_data = json.loads(request.body.decode())
+        content = req_data['content']
+        comment.content = content
+        comment.save()
+        return HttpResponse(status=200)
+    elif request.method == 'DELETE':
+        if not request.user.is_authenticated:
+            return HttpResponse(status=401)
+        try:
+            comment = Comment.objects.get(id=comment_id)
+        except Comment.DoesNotExist:
+            return HttpResponse(status=404)
+        if comment.author.id != request.user.id:
+            return HttpResponse(status=403)
+        comment.delete()
+        return HttpResponse(status=200)
+    else:
+        return HttpResponseNotAllowed(['GET', 'PUT', 'DELETE'])
+
+
+
+
